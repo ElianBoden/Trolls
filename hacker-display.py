@@ -1,10 +1,11 @@
-# additional.pyw - Scary full-screen image display
 import tkinter as tk
 import urllib.request
 from datetime import datetime
 import sys
 import random
 import time
+import threading
+import math
 
 def main():
     # Create the main window
@@ -32,172 +33,526 @@ def main():
     # Make window always on top
     window.attributes('-topmost', True)
     
+    # Store the original background color for flicker effect
+    original_bg = '#000000'
+    
     # Try to load and display the image
+    photo = None  # Keep reference to prevent garbage collection
     try:
         # Use a different, scarier image from Unsplash
         # This is a dark, eerie forest image
-        image_url = "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=870&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+        image_url = "https://images.unsplash.com/photo-1562860149-691401a306f8?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
         
-        # Download image
-        with urllib.request.urlopen(image_url) as response:
-            image_data = response.read()
-        
-        # Convert to PhotoImage
-        from PIL import Image, ImageTk, ImageEnhance
-        import io
-        
-        # Load image
-        image = Image.open(io.BytesIO(image_data))
-        
-        # Make image darker and more ominous
-        enhancer = ImageEnhance.Brightness(image)
-        image = enhancer.enhance(0.4)  # 40% brightness
-        
-        # Increase contrast for more dramatic effect
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(1.8)  # 180% contrast
-        
-        # Add a red tint for horror effect
-        r, g, b = image.split()
-        # Boost red channel
-        r = r.point(lambda i: i * 1.3 if i > 60 else i)
-        # Reduce green and blue
-        g = g.point(lambda i: i * 0.7)
-        b = b.point(lambda i: i * 0.7)
-        image = Image.merge('RGB', (r, g, b))
-        
-        # Resize image to fill the window completely
-        image = image.resize((window_width, window_height), Image.Resampling.LANCZOS)
-        
-        # Convert to PhotoImage
-        photo = ImageTk.PhotoImage(image)
-        
-        # Create label to display image (fills entire window)
-        image_label = tk.Label(window, image=photo, bg="#000000")
-        image_label.image = photo
-        image_label.place(x=0, y=0, width=window_width, height=window_height)
-        
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [INFO] Scary image loaded and displayed")
-        
+        if image_url and image_url.strip():
+            # Download image
+            with urllib.request.urlopen(image_url) as response:
+                image_data = response.read()
+            
+            # Convert to PhotoImage
+            from PIL import Image, ImageTk, ImageEnhance
+            import io
+            
+            # Load image
+            image = Image.open(io.BytesIO(image_data))
+            
+            # Make image darker and more ominous
+            enhancer = ImageEnhance.Brightness(image)
+            image = enhancer.enhance(0.4)  # 40% brightness
+            
+            # Increase contrast for more dramatic effect
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.8)  # 180% contrast
+            
+            # Add a red tint for horror effect
+            r, g, b = image.split()
+            # Boost red channel
+            r = r.point(lambda i: i * 1.3 if i > 60 else i)
+            # Reduce green and blue
+            g = g.point(lambda i: i * 0.7)
+            b = b.point(lambda i: i * 0.7)
+            image = Image.merge('RGB', (r, g, b))
+            
+            # Resize image to fill the window completely
+            image = image.resize((window_width, window_height), Image.Resampling.LANCZOS)
+            
+            # Convert to PhotoImage
+            photo = ImageTk.PhotoImage(image)
+            
+            # Create label to display image (fills entire window)
+            image_label = tk.Label(window, image=photo, bg="#000000")
+            image_label.image = photo  # Keep reference
+            image_label.place(x=0, y=0, width=window_width, height=window_height)
+            
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [INFO] Scary image loaded and displayed")
+            
     except Exception as e:
         # If image loading fails, just create a solid red screen
         window.configure(bg='#8B0000')  # Dark red
+        original_bg = '#8B0000'
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [WARNING] Failed to load image, using solid color: {e}")
     
-    # Add subtle flicker effect for horror
-    def flicker():
-        colors = ['#000000', '#1a0000', '#330000', '#4d0000']
-        window.configure(bg=random.choice(colors))
-        window.after(random.randint(50, 300), flicker)
+    # Track active canvases to prevent interference
+    active_canvases = []
     
-    # Start flicker effect
-    flicker()
+    # INTENSE FLICKER EFFECT - MORE DRAMATIC
+    def intense_flicker():
+        try:
+            if window.winfo_exists():
+                # More varied and intense colors
+                colors = ['#000000', '#330000', '#660000', '#990000', '#CC0000', '#FF0000']
+                flicker_color = random.choice(colors)
+                
+                # Create a semi-transparent overlay for flicker
+                flicker_canvas = tk.Canvas(window, bg='', highlightthickness=0)
+                flicker_canvas.place(x=0, y=0, width=window_width, height=window_height)
+                flicker_canvas.create_rectangle(0, 0, window_width, window_height, 
+                                               fill=flicker_color, outline='', stipple='gray50')
+                active_canvases.append(flicker_canvas)
+                
+                # Remove after very short time for strobe effect
+                window.after(random.randint(30, 100), 
+                           lambda fc=flicker_canvas: remove_canvas(fc))
+                
+                # Schedule next flicker
+                window.after(random.randint(50, 200), intense_flicker)
+        except:
+            pass
     
-    # Add a barely visible face/eye effect in random positions
+    # Start intense flicker
+    intense_flicker()
+    
+    # IMPROVED EYE EFFECT WITH MOVEMENT AND BLINKING
+    class ScaryEye:
+        def __init__(self, canvas, x, y, size):
+            self.canvas = canvas
+            self.x = x
+            self.y = y
+            self.size = size
+            self.blink_state = 0  # 0=open, 1=half, 2=closed
+            self.direction_x = random.choice([-1, 1]) * random.uniform(0.5, 2.0)
+            self.direction_y = random.choice([-1, 1]) * random.uniform(0.5, 2.0)
+            
+            # Draw eye with glow effect
+            self.glow = canvas.create_oval(x-size*1.5, y-size*0.75, 
+                                           x+size*1.5, y+size*0.75,
+                                           fill='#FF4444', outline='', width=0)
+            self.white = canvas.create_oval(x-size, y-size//2, 
+                                           x+size, y+size//2,
+                                           fill='#FFFFFF', outline='', width=0)
+            pupil_size = size // 3
+            self.pupil = canvas.create_oval(x-pupil_size, y-pupil_size//2,
+                                           x+pupil_size, y+pupil_size//2,
+                                           fill='#000000', outline='', width=0)
+            
+        def update_position(self):
+            # Move eye slightly
+            self.x += self.direction_x
+            self.y += self.direction_y
+            
+            # Bounce off edges
+            if self.x < self.size*2 or self.x > window_width - self.size*2:
+                self.direction_x *= -1
+            if self.y < self.size*2 or self.y > window_height - self.size*2:
+                self.direction_y *= -1
+            
+            # Update eye position
+            self.canvas.coords(self.glow, 
+                              self.x-self.size*1.5, self.y-self.size*0.75,
+                              self.x+self.size*1.5, self.y+self.size*0.75)
+            self.canvas.coords(self.white,
+                              self.x-self.size, self.y-self.size//2,
+                              self.x+self.size, self.y+self.size//2)
+            pupil_size = self.size // 3
+            self.canvas.coords(self.pupil,
+                              self.x-pupil_size, self.y-pupil_size//2,
+                              self.x+pupil_size, self.y+pupil_size//2)
+        
+        def blink(self):
+            if self.blink_state == 0:  # Start blinking
+                # Make eye half closed
+                self.canvas.coords(self.white,
+                                  self.x-self.size, self.y-self.size//4,
+                                  self.x+self.size, self.y+self.size//4)
+                pupil_size = self.size // 6
+                self.canvas.coords(self.pupil,
+                                  self.x-pupil_size, self.y-pupil_size//4,
+                                  self.x+pupil_size, self.y+pupil_size//4)
+                self.blink_state = 1
+            elif self.blink_state == 1:  # Fully close
+                self.canvas.coords(self.white,
+                                  self.x-self.size, self.y-2,
+                                  self.x+self.size, self.y+2)
+                self.canvas.coords(self.pupil,
+                                  self.x-2, self.y-2,
+                                  self.x+2, self.y+2)
+                self.blink_state = 2
+            else:  # Open again
+                self.canvas.coords(self.white,
+                                  self.x-self.size, self.y-self.size//2,
+                                  self.x+self.size, self.y+self.size//2)
+                pupil_size = self.size // 3
+                self.canvas.coords(self.pupil,
+                                  self.x-pupil_size, self.y-pupil_size//2,
+                                  self.x+pupil_size, self.y+pupil_size//2)
+                self.blink_state = 0
+    
+    eyes = []
+    
     def add_eye_effect():
         try:
-            # Create a canvas for drawing effects
-            canvas = tk.Canvas(window, bg='', highlightthickness=0)
-            canvas.place(x=0, y=0, width=window_width, height=window_height)
-            
-            # Add several "eyes" that appear randomly
-            for _ in range(3):
-                x = random.randint(50, window_width - 50)
-                y = random.randint(50, window_height - 50)
-                size = random.randint(10, 30)
+            if window.winfo_exists():
+                # Create a canvas for drawing effects
+                canvas = tk.Canvas(window, bg='', highlightthickness=0)
+                canvas.place(x=0, y=0, width=window_width, height=window_height)
+                active_canvases.append(canvas)
                 
-                # Draw eye (white part)
-                canvas.create_oval(x-size, y-size//2, x+size, y+size//2, 
-                                  fill='#FFFFFF', outline='', width=0)
+                # Add several "eyes" that appear randomly
+                for _ in range(random.randint(2, 4)):
+                    x = random.randint(50, window_width - 50)
+                    y = random.randint(50, window_height - 50)
+                    size = random.randint(15, 40)
+                    
+                    eye = ScaryEye(canvas, x, y, size)
+                    eyes.append((eye, canvas))
                 
-                # Draw pupil
-                pupil_size = size // 3
-                canvas.create_oval(x-pupil_size, y-pupil_size//2, 
-                                  x+pupil_size, y+pupil_size//2, 
-                                  fill='#000000', outline='', width=0)
+                # Make eyes move and blink
+                def animate_eyes():
+                    if window.winfo_exists():
+                        for eye, canv in eyes[:]:
+                            if canv.winfo_exists():
+                                eye.update_position()
+                                if random.random() < 0.1:  # 10% chance to blink
+                                    eye.blink()
+                        
+                        # Schedule next animation frame
+                        window.after(50, animate_eyes)
+                
+                # Start eye animation
+                animate_eyes()
                 
                 # Make eyes disappear after random time
-                window.after(random.randint(500, 2000), 
-                           lambda c=canvas, i=_: c.delete('all'))
+                window.after(random.randint(2000, 5000), 
+                           lambda c=canvas: remove_canvas(c))
+        except:
+            pass
+    
+    def remove_canvas(canvas):
+        try:
+            if canvas.winfo_exists():
+                canvas.destroy()
+            if canvas in active_canvases:
+                active_canvases.remove(canvas)
+            # Remove any eyes associated with this canvas
+            global eyes
+            eyes = [(eye, canv) for eye, canv in eyes if canv != canvas]
         except:
             pass
     
     # Trigger eye effects at random intervals
     def trigger_eyes():
-        add_eye_effect()
-        window.after(random.randint(1000, 3000), trigger_eyes)
+        try:
+            if window.winfo_exists():
+                add_eye_effect()
+                window.after(random.randint(1500, 4000), trigger_eyes)
+        except:
+            pass
     
     # Start eye effects after a delay
-    window.after(1000, trigger_eyes)
+    window.after(800, trigger_eyes)
     
-    # Add random screen glitch effect
-    def glitch_effect():
+    # ENHANCED GLITCH EFFECTS
+    def enhanced_glitch_effect():
         try:
-            # Create temporary glitch rectangles
-            glitch_canvas = tk.Canvas(window, bg='', highlightthickness=0)
-            glitch_canvas.place(x=0, y=0, width=window_width, height=window_height)
-            
-            # Add random glitch lines
-            for _ in range(random.randint(2, 5)):
-                x1 = random.randint(0, window_width)
-                y1 = random.randint(0, window_height)
-                width = random.randint(20, 100)
-                height = random.randint(2, 5)
-                glitch_canvas.create_rectangle(x1, y1, x1+width, y1+height, 
-                                              fill='#FF0000', outline='', width=0)
-            
-            # Remove glitch after very short time
-            window.after(random.randint(50, 150), glitch_canvas.destroy)
+            if window.winfo_exists():
+                # Create temporary glitch canvas
+                glitch_canvas = tk.Canvas(window, bg='', highlightthickness=0)
+                glitch_canvas.place(x=0, y=0, width=window_width, height=window_height)
+                active_canvases.append(glitch_canvas)
+                
+                # Different types of glitches
+                glitch_type = random.choice(['lines', 'static', 'blocks', 'wave'])
+                
+                if glitch_type == 'lines':
+                    # Horizontal and vertical lines
+                    for _ in range(random.randint(3, 8)):
+                        if random.random() < 0.5:  # Horizontal
+                            x1 = random.randint(0, window_width)
+                            y1 = random.randint(0, window_height)
+                            width = random.randint(30, 150)
+                            height = random.randint(1, 4)
+                            color = random.choice(['#FF0000', '#00FF00', '#0000FF'])
+                            glitch_canvas.create_rectangle(x1, y1, x1+width, y1+height, 
+                                                          fill=color, outline='', width=0)
+                        else:  # Vertical
+                            x1 = random.randint(0, window_width)
+                            y1 = random.randint(0, window_height)
+                            width = random.randint(1, 4)
+                            height = random.randint(30, 150)
+                            color = random.choice(['#FF0000', '#00FF00', '#0000FF'])
+                            glitch_canvas.create_rectangle(x1, y1, x1+width, y1+height, 
+                                                          fill=color, outline='', width=0)
+                
+                elif glitch_type == 'static':
+                    # TV static effect
+                    for _ in range(random.randint(50, 150)):
+                        x1 = random.randint(0, window_width)
+                        y1 = random.randint(0, window_height)
+                        size = random.randint(1, 3)
+                        color = random.choice(['#FFFFFF', '#888888', '#000000'])
+                        glitch_canvas.create_rectangle(x1, y1, x1+size, y1+size, 
+                                                      fill=color, outline='', width=0)
+                
+                elif glitch_type == 'blocks':
+                    # Blocky glitch
+                    for _ in range(random.randint(10, 30)):
+                        x1 = random.randint(0, window_width)
+                        y1 = random.randint(0, window_height)
+                        size = random.randint(10, 40)
+                        color = random.choice(['#FF0000', '#00FF00', '#0000FF', '#FFFFFF'])
+                        glitch_canvas.create_rectangle(x1, y1, x1+size, y1+size, 
+                                                      fill=color, outline='', width=0)
+                
+                elif glitch_type == 'wave':
+                    # Wave distortion effect
+                    for y in range(0, window_height, 10):
+                        offset = int(math.sin(y / 50.0 * math.pi) * 20)
+                        color = random.choice(['#FF0000', '#00FFFF', '#FFFF00'])
+                        glitch_canvas.create_rectangle(0+offset, y, window_width+offset, y+5, 
+                                                      fill=color, outline='', width=0)
+                
+                # Remove glitch after very short time
+                window.after(random.randint(60, 200), 
+                           lambda gc=glitch_canvas: remove_canvas(gc))
         except:
             pass
         
-        # Schedule next glitch
-        window.after(random.randint(500, 2000), glitch_effect)
+        # Schedule next glitch if window exists
+        if window.winfo_exists():
+            window.after(random.randint(300, 1500), enhanced_glitch_effect)
     
-    # Start glitch effects
-    window.after(500, glitch_effect)
+    # Start enhanced glitch effects
+    window.after(300, enhanced_glitch_effect)
+    
+    # SCARY TEXT APPEARANCE
+    def scary_text_effect():
+        try:
+            if window.winfo_exists():
+                # Create canvas for text
+                text_canvas = tk.Canvas(window, bg='', highlightthickness=0)
+                text_canvas.place(x=0, y=0, width=window_width, height=window_height)
+                active_canvases.append(text_canvas)
+                
+                # Scary messages
+                messages = [
+                    "GET OUT", "HELP ME", "BEHIND YOU", "DON'T LOOK",
+                    "THEY'RE HERE", "I SEE YOU", "RUN", "IT'S TOO LATE"
+                ]
+                
+                # Add random text
+                for _ in range(random.randint(1, 3)):
+                    x = random.randint(20, window_width - 100)
+                    y = random.randint(20, window_height - 40)
+                    message = random.choice(messages)
+                    
+                    # Create text with shadow for creepy effect
+                    text_canvas.create_text(x+2, y+2, text=message, 
+                                           fill='#880000', font=('Arial', random.randint(20, 40), 'bold'))
+                    text_canvas.create_text(x, y, text=message, 
+                                           fill='#FF0000', font=('Arial', random.randint(20, 40), 'bold'))
+                
+                # Fade out effect
+                def fade_out(canvas, alpha=1.0):
+                    if canvas.winfo_exists() and alpha > 0:
+                        # This is a simplified fade - Tkinter doesn't support real alpha on canvas items
+                        # We'll just remove it after delay
+                        window.after(50, lambda: fade_out(canvas, alpha-0.1))
+                
+                # Remove after delay
+                window.after(random.randint(1000, 3000), 
+                           lambda tc=text_canvas: remove_canvas(tc))
+        except:
+            pass
+        
+        # Schedule next text effect
+        if window.winfo_exists():
+            window.after(random.randint(4000, 8000), scary_text_effect)
+    
+    # Start text effects after delay
+    window.after(2000, scary_text_effect)
+    
+    # PULSATING EFFECT
+    def pulsing_effect():
+        try:
+            if window.winfo_exists():
+                # Create pulsing overlay
+                pulse_canvas = tk.Canvas(window, bg='', highlightthickness=0)
+                pulse_canvas.place(x=0, y=0, width=window_width, height=window_height)
+                active_canvases.append(pulse_canvas)
+                
+                # Create pulsing circle
+                center_x = window_width // 2
+                center_y = window_height // 2
+                max_radius = min(window_width, window_height) // 2
+                
+                def pulse(radius=10, growing=True):
+                    if not pulse_canvas.winfo_exists():
+                        return
+                    
+                    # Clear previous pulse
+                    pulse_canvas.delete('all')
+                    
+                    # Draw new pulse
+                    pulse_canvas.create_oval(center_x-radius, center_y-radius,
+                                            center_x+radius, center_y+radius,
+                                            outline='#FF0000', width=2, stipple='gray50')
+                    
+                    if growing:
+                        radius += 10
+                        if radius > max_radius:
+                            growing = False
+                    else:
+                        radius -= 10
+                        if radius < 10:
+                            remove_canvas(pulse_canvas)
+                            return
+                    
+                    window.after(50, lambda: pulse(radius, growing))
+                
+                # Start pulse
+                pulse()
+        except:
+            pass
+        
+        # Schedule next pulse
+        if window.winfo_exists():
+            window.after(random.randint(5000, 10000), pulsing_effect)
+    
+    # Start pulsing effect
+    window.after(3000, pulsing_effect)
+    
+    # BLOOD DRIP EFFECT
+    def blood_drip_effect():
+        try:
+            if window.winfo_exists():
+                canvas = tk.Canvas(window, bg='', highlightthickness=0)
+                canvas.place(x=0, y=0, width=window_width, height=window_height)
+                active_canvases.append(canvas)
+                
+                # Create multiple drips
+                drips = []
+                for _ in range(random.randint(3, 8)):
+                    x = random.randint(10, window_width - 10)
+                    drips.append({'x': x, 'y': 0, 'length': 0, 'max_length': random.randint(30, 150)})
+                
+                def animate_drips(frame=0):
+                    if not canvas.winfo_exists():
+                        return
+                    
+                    canvas.delete('all')
+                    
+                    for drip in drips:
+                        # Draw blood drip
+                        drip_length = min(drip['length'], drip['max_length'])
+                        if drip_length > 0:
+                            # Main drip line
+                            canvas.create_line(drip['x'], drip['y'], 
+                                             drip['x'], drip['y'] + drip_length,
+                                             fill='#8B0000', width=3)
+                            
+                            # Drip end (bulb)
+                            if drip['length'] >= drip['max_length'] and frame % 10 < 5:
+                                canvas.create_oval(drip['x']-4, drip['y']+drip_length-4,
+                                                  drip['x']+4, drip['y']+drip_length+4,
+                                                  fill='#FF0000', outline='')
+                        
+                        # Grow drip
+                        if drip['length'] < drip['max_length']:
+                            drip['length'] += random.randint(1, 3)
+                    
+                    # Continue animation
+                    if any(drip['length'] < drip['max_length'] for drip in drips) or frame < 100:
+                        window.after(50, lambda: animate_drips(frame+1))
+                    else:
+                        window.after(1000, lambda c=canvas: remove_canvas(c))
+                
+                # Start drip animation
+                animate_drips()
+        except:
+            pass
+        
+        # Schedule next blood drip
+        if window.winfo_exists():
+            window.after(random.randint(8000, 15000), blood_drip_effect)
+    
+    # Start blood drip effect
+    window.after(5000, blood_drip_effect)
     
     # Add low-frequency ominous hum (simulated with console message)
     print(f"[{datetime.now().strftime('%H:%M:%S')}] [INFO] Playing ominous frequency: 13Hz...")
     
-    # Function to close window after 5 seconds
+    # INTENSE CLOSE EFFECT
     def close_window():
-        # Add final effect before closing
+        # Add intense closing sequence
         try:
-            # Flash red before closing
-            original_color = window.cget('bg')
-            window.configure(bg='#FF0000')
-            window.update()
-            time.sleep(0.1)
-            window.configure(bg='#000000')
-            window.update()
-            time.sleep(0.1)
+            if window.winfo_exists():
+                # Create final effect canvas
+                final_canvas = tk.Canvas(window, bg='', highlightthickness=0)
+                final_canvas.place(x=0, y=0, width=window_width, height=window_height)
+                
+                def flash_sequence(step=0):
+                    if not final_canvas.winfo_exists():
+                        return
+                    
+                    colors = ['#FF0000', '#000000', '#8B0000', '#000000', '#FF0000', '#000000']
+                    if step < len(colors):
+                        window.configure(bg=colors[step])
+                        window.after(100, lambda: flash_sequence(step+1))
+                    else:
+                        # Final red screen
+                        window.configure(bg='#FF0000')
+                        window.after(200, final_destroy)
+                
+                # Start flash sequence
+                flash_sequence()
+        except:
+            final_destroy()
+    
+    def final_destroy():
+        try:
+            # Clean up all canvases first
+            for canvas in active_canvases[:]:
+                try:
+                    if canvas.winfo_exists():
+                        canvas.destroy()
+                except:
+                    pass
+            
+            if window.winfo_exists():
+                window.destroy()
         except:
             pass
-        
-        window.destroy()
     
-    # Schedule window to close after 5 seconds
-    window.after(5000, close_window)
+    # Schedule window to close after 15 seconds (longer for effects)
+    window.after(15000, close_window)
     
     # Print to console
     current_time = datetime.now().strftime('%H:%M:%S')
-    print(f"[{current_time}] [INFO] Scary window activated")
+    print(f"[{current_time}] [INFO] SCARY WINDOW ACTIVATED - ENHANCED VERSION")
     print(f"[{current_time}] [INFO] Screen size: {screen_width}x{screen_height}")
     print(f"[{current_time}] [INFO] Window size: {window_width}x{window_height}")
-    print(f"[{current_time}] [INFO] Window will close in 5 seconds")
+    print(f"[{current_time}] [INFO] Window will close in 15 seconds")
     
     # Bind escape key to close window (for safety)
     def on_escape(event):
-        window.destroy()
+        final_destroy()
     
     window.bind('<Escape>', on_escape)
     
     # Run the window
     try:
         window.mainloop()
-    except:
-        pass
+    except Exception as e:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [ERROR] Window error: {e}")
     
     current_time = datetime.now().strftime('%H:%M:%S')
     print(f"[{current_time}] [INFO] Window deactivated")
@@ -220,4 +575,6 @@ if __name__ == "__main__":
         sys.exit(0)
     except Exception as e:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] [ERROR] {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
