@@ -1,393 +1,307 @@
 import tkinter as tk
+from tkinter import messagebox
 import requests
-import time
 from io import BytesIO
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
+import sys
+import subprocess
+from typing import List, Tuple, Optional
 
-def create_real_image_troll():
-    """Display actual images from URL with transparent background"""
-    
-    # Create main window
-    root = tk.Tk()
-    root.title("")
-    
-    # Remove all window decorations
-    root.overrideredirect(True)
-    
-    # Get screen size
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    
-    # Set window to fullscreen
-    root.geometry(f"{screen_width}x{screen_height}+0+0")
-    
-    # Make window background transparent (Windows specific)
-    try:
-        root.wm_attributes('-transparentcolor', 'black')
-        root.configure(bg='black')
-    except:
-        pass
-    
-    # Keep window on top
-    root.attributes('-topmost', True)
-    
-    print("=" * 60)
-    print("REAL IMAGE DISPLAY - NO BACKGROUND")
-    print("=" * 60)
-    
-    # Calculate cell size for 10x5 grid
-    cell_width = screen_width // 10
-    cell_height = screen_height // 5
-    
-    # Try to load the actual image from URL
-    print("Loading image from URL...")
-    photo = None
-    try:
-        url = "https://i.ebayimg.com/images/g/NPAAAOSwP79cdw6P/s-l400.jpg"
-        response = requests.get(url, timeout=10)
-        
-        # Convert to PIL Image
-        pil_image = Image.open(BytesIO(response.content))
-        
-        # Resize to fit cell
-        pil_image = pil_image.resize((cell_width - 10, cell_height - 10), Image.Resampling.LANCZOS)
-        
-        # Convert to PhotoImage
-        photo = ImageTk.PhotoImage(pil_image)
-        
-        # Keep reference
-        root.photo = photo
-        
-        print(f"Successfully loaded image: {pil_image.width}x{pil_image.height}")
-        
-    except Exception as e:
-        print(f"Error loading image: {e}")
-        print("Will use fallback image")
-        photo = None
-    
-    # If image failed, create a simple fallback image
-    if photo is None:
-        # Create a simple colored image as fallback
-        from PIL import ImageDraw
-        fallback_img = Image.new('RGB', (cell_width - 10, cell_height - 10), color='red')
-        draw = ImageDraw.Draw(fallback_img)
-        draw.text((50, 50), "IMG", fill='white')
-        photo = ImageTk.PhotoImage(fallback_img)
-        root.photo = photo
-    
-    # Store positions for all 50 images (top-right to bottom-left)
-    positions = []
-    for i in range(50):
-        row = i // 10  # 0-4
-        col = 9 - (i % 10)  # 9-0 (right to left)
-        x = col * cell_width + 5
-        y = row * cell_height + 5
-        positions.append((x, y))
-    
-    # Store image labels
-    image_labels = []
-    created_count = 0
-    
-    def create_next_image():
-        nonlocal created_count
-        
-        if created_count >= 50:
-            # Start destruction phase
-            destroy_images()
-            return
-        
-        # Create a label with the actual image
-        label = tk.Label(root, image=photo, bg='black', bd=0)
-        
-        # Position it
-        x, y = positions[created_count]
-        label.place(x=x, y=y)
-        
-        # Add to list
-        image_labels.append(label)
-        created_count += 1
-        
-        print(f"Displayed image {created_count}/50 at position ({created_count})")
-        
-        # Remove oldest if we have more than 10
-        if len(image_labels) > 10:
-            oldest = image_labels.pop(0)
-            oldest.destroy()
-            print(f"  Removed oldest image (showing {len(image_labels)} images)")
-        
-        # Schedule next image
-        if created_count < 50:
-            root.after(50, create_next_image)
-        else:
-            # Wait then destroy remaining
-            root.after(500, destroy_images)
-    
-    def destroy_images():
-        """Destroy remaining images one by one"""
-        if not image_labels:
-            print("All images destroyed")
-            root.after(1000, root.destroy)
-            return
-        
-        # Destroy next image
-        label = image_labels.pop(0)
-        label.destroy()
-        
-        print(f"Destroyed image ({len(image_labels)} remaining)")
-        
-        # Schedule next destruction
-        if image_labels:
-            root.after(50, destroy_images)
-        else:
-            print("\n" + "=" * 50)
-            print("PROGRAM COMPLETE")
-            print("=" * 50)
-            root.after(1000, root.destroy)
-    
-    # Start the display
-    print("\nStarting image display in 2 seconds...")
-    print("Images will appear from top-right to bottom-left")
-    print("Only 10 images visible at a time")
-    print("-" * 60)
-    
-    root.after(2000, create_next_image)
-    
-    # Exit handlers
-    root.bind('<Escape>', lambda e: root.destroy())
-    
-    root.mainloop()
 
-# Alternative using canvas for better transparency
-def canvas_image_troll():
-    """Use canvas to display images with better transparency control"""
+class ImageGridDisplay:
+    """Improved version of the image display application with better structure and error handling"""
     
-    root = tk.Tk()
-    root.title("")
-    root.overrideredirect(True)
-    
-    # Get screen size
-    w = root.winfo_screenwidth()
-    h = root.winfo_screenheight()
-    root.geometry(f"{w}x{h}+0+0")
-    
-    # Make window transparent
-    try:
-        root.attributes('-transparentcolor', 'black')
-        root.configure(bg='black')
-    except:
-        pass
-    
-    root.attributes('-topmost', True)
-    
-    # Create canvas
-    canvas = tk.Canvas(root, width=w, height=h, bg='black', highlightthickness=0)
-    canvas.pack()
-    
-    print("Loading and displaying actual image...")
-    
-    # Load image
-    photo = None
-    try:
-        url = "https://i.ebayimg.com/images/g/NPAAAOSwP79cdw6P/s-l400.jpg"
-        response = requests.get(url, timeout=10)
+    def __init__(self):
+        self.root = None
+        self.canvas = None
+        self.photo = None
+        self.image_objects = []
+        self.positions = []
+        self.screen_width = 0
+        self.screen_height = 0
+        self.cell_width = 0
+        self.cell_height = 0
         
-        # Open and resize
-        pil_img = Image.open(BytesIO(response.content))
-        cell_w = w // 10
-        cell_h = h // 5
-        pil_img = pil_img.resize((cell_w - 20, cell_h - 20), Image.Resampling.LANCZOS)
+    def check_dependencies(self) -> bool:
+        """Check and install required packages"""
+        required_packages = ['requests', 'PIL']
         
-        # Convert to PhotoImage
-        photo = ImageTk.PhotoImage(pil_img)
-        root.photo = photo
+        for package in required_packages:
+            try:
+                if package == 'PIL':
+                    import PIL
+                else:
+                    __import__(package)
+            except ImportError:
+                response = messagebox.askyesno(
+                    "Missing Dependencies",
+                    f"The '{package}' package is required but not installed.\n"
+                    "Would you like to install it now?"
+                )
+                
+                if response:
+                    try:
+                        subprocess.check_call([
+                            sys.executable, "-m", "pip", "install", 
+                            "requests" if package == "requests" else "pillow"
+                        ])
+                        messagebox.showinfo("Success", f"{package} installed successfully!")
+                    except subprocess.CalledProcessError:
+                        messagebox.showerror(
+                            "Installation Failed",
+                            f"Failed to install {package}. Please install manually."
+                        )
+                        return False
+                else:
+                    return False
+        return True
+    
+    def load_image_from_url(self, url: str) -> Optional[Image.Image]:
+        """Load image from URL with error handling"""
+        try:
+            print(f"Loading image from: {url}")
+            response = requests.get(url, timeout=15)
+            response.raise_for_status()  # Raise exception for bad status codes
+            
+            # Verify content type
+            content_type = response.headers.get('content-type', '')
+            if 'image' not in content_type:
+                print(f"Warning: URL doesn't appear to be an image (Content-Type: {content_type})")
+            
+            # Load and verify image
+            image = Image.open(BytesIO(response.content))
+            image.verify()  # Verify it's a valid image
+            image = Image.open(BytesIO(response.content))  # Reopen after verify
+            
+            print(f"Successfully loaded image: {image.width}x{image.height}, Mode: {image.mode}")
+            return image
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Network error loading image: {e}")
+        except Image.UnidentifiedImageError:
+            print("Error: Downloaded content is not a valid image")
+        except Exception as e:
+            print(f"Unexpected error loading image: {e}")
+            
+        return None
+    
+    def create_fallback_image(self, width: int, height: int) -> Image.Image:
+        """Create a fallback image when URL loading fails"""
+        print("Creating fallback image...")
+        image = Image.new('RGBA', (width, height), color=(255, 0, 0, 255))
+        draw = ImageDraw.Draw(image)
         
-    except Exception as e:
-        print(f"Error: {e}")
-        # Create fallback
-        pil_img = Image.new('RGB', (100, 100), color='blue')
-        photo = ImageTk.PhotoImage(pil_img)
-        root.photo = photo
-    
-    # Store image objects
-    image_objects = []
-    created = 0
-    
-    # Pre-calculate positions
-    positions = []
-    cell_w = w // 10
-    cell_h = h // 5
-    for i in range(50):
-        row = i // 10
-        col = 9 - (i % 10)
-        x = col * cell_w + 10
-        y = row * cell_h + 10
-        positions.append((x, y))
-    
-    def create_image():
-        nonlocal created
+        # Add some text to the fallback image
+        try:
+            # Try to draw centered text
+            from PIL import ImageFont
+            try:
+                font = ImageFont.truetype("arial.ttf", 20)
+            except:
+                font = ImageFont.load_default()
+            
+            text = "IMAGE\nERROR"
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            
+            x = (width - text_width) // 2
+            y = (height - text_height) // 2
+            
+            draw.text((x, y), text, fill=(255, 255, 255, 255), font=font)
+        except:
+            # Simple text if font loading fails
+            draw.text((10, 10), "IMG", fill=(255, 255, 255, 255))
         
-        if created >= 50:
-            remove_images()
+        return image
+    
+    def calculate_grid_positions(self) -> List[Tuple[int, int]]:
+        """Calculate positions for a 10x5 grid (right to left, top to bottom)"""
+        positions = []
+        for i in range(50):  # 10 columns × 5 rows = 50 positions
+            row = i // 10
+            col = 9 - (i % 10)  # Right to left order
+            x = col * self.cell_width + (self.cell_width // 20)  # Centered in cell
+            y = row * self.cell_height + (self.cell_height // 20)
+            positions.append((x, y))
+        return positions
+    
+    def setup_window(self) -> None:
+        """Configure the main application window"""
+        self.root = tk.Tk()
+        self.root.title("Image Display")
+        
+        # Remove window decorations and set to fullscreen
+        self.root.overrideredirect(True)
+        
+        # Get screen dimensions
+        self.screen_width = self.root.winfo_screenwidth()
+        self.screen_height = self.root.winfo_screenheight()
+        
+        # Set window to fullscreen
+        self.root.geometry(f"{self.screen_width}x{self.screen_height}+0+0")
+        
+        # Configure transparency (if supported by OS)
+        try:
+            self.root.wm_attributes('-transparentcolor', 'black')
+            self.root.configure(bg='black')
+            print("Transparency enabled")
+        except:
+            print("Transparency not supported on this platform")
+            self.root.configure(bg='black')
+        
+        # Keep window on top
+        self.root.attributes('-topmost', True)
+        
+        # Escape key to exit
+        self.root.bind('<Escape>', lambda e: self.cleanup_and_exit())
+        
+        # Also exit on Alt+F4 and other common exit methods
+        self.root.protocol("WM_DELETE_WINDOW", self.cleanup_and_exit)
+        
+    def setup_canvas(self) -> None:
+        """Setup canvas for image display"""
+        self.canvas = tk.Canvas(
+            self.root, 
+            width=self.screen_width, 
+            height=self.screen_height,
+            bg='black',
+            highlightthickness=0
+        )
+        self.canvas.pack(fill='both', expand=True)
+    
+    def prepare_image(self) -> None:
+        """Load and prepare the image for display"""
+        # Calculate cell size for 10x5 grid
+        self.cell_width = self.screen_width // 10
+        self.cell_height = self.screen_height // 5
+        
+        # Image URL (using a reliable placeholder image)
+        image_urls = [
+            "https://images.unsplash.com/photo-1562860149-691401a306f8?w=400&h=300&fit=crop",
+            "https://picsum.photos/400/300",  # Random placeholder
+            "https://via.placeholder.com/400x300/FF0000/FFFFFF?text=Image+Display"
+        ]
+        
+        image = None
+        for url in image_urls:
+            image = self.load_image_from_url(url)
+            if image:
+                break
+        
+        # Create fallback if no URL worked
+        if not image:
+            print("All URL attempts failed, using fallback image")
+            image = self.create_fallback_image(
+                self.cell_width - 20,
+                self.cell_height - 20
+            )
+        
+        # Resize image to fit cell
+        target_size = (self.cell_width - 20, self.cell_height - 20)
+        if image.size != target_size:
+            image = image.resize(target_size, Image.Resampling.LANCZOS)
+        
+        # Convert to PhotoImage for tkinter
+        self.photo = ImageTk.PhotoImage(image)
+        
+        # Calculate grid positions
+        self.positions = self.calculate_grid_positions()
+    
+    def create_next_image(self, index: int = 0) -> None:
+        """Create and display the next image in sequence"""
+        if index >= 50:
+            # All images created, start removal
+            self.root.after(500, self.remove_next_image)
             return
         
         # Create image on canvas
-        x, y = positions[created]
-        img_id = canvas.create_image(x, y, image=photo, anchor='nw')
-        image_objects.append(img_id)
+        x, y = self.positions[index]
+        img_id = self.canvas.create_image(x, y, image=self.photo, anchor='nw')
+        self.image_objects.append(img_id)
         
-        created += 1
-        print(f"Created image {created}/50")
+        print(f"Displayed image {index + 1}/50")
         
-        # Remove oldest if more than 10
-        if len(image_objects) > 10:
-            old_id = image_objects.pop(0)
-            canvas.delete(old_id)
-            print(f"  Removed oldest (showing {len(image_objects)})")
+        # Remove oldest if more than 10 visible
+        if len(self.image_objects) > 10:
+            old_id = self.image_objects.pop(0)
+            self.canvas.delete(old_id)
+            print(f"  Removed oldest image ({len(self.image_objects)} visible)")
         
-        # Schedule next
-        if created < 50:
-            root.after(50, create_image)
-        else:
-            root.after(500, remove_images)
+        # Schedule next image
+        self.root.after(50, lambda: self.create_next_image(index + 1))
     
-    def remove_images():
-        if not image_objects:
-            print("Done - closing")
-            root.after(1000, root.destroy)
+    def remove_next_image(self) -> None:
+        """Remove images one by one"""
+        if not self.image_objects:
+            print("\n" + "=" * 50)
+            print("PROGRAM COMPLETE")
+            print("=" * 50)
+            self.root.after(1000, self.cleanup_and_exit)
             return
         
-        img_id = image_objects.pop(0)
-        canvas.delete(img_id)
+        # Remove next image
+        img_id = self.image_objects.pop(0)
+        self.canvas.delete(img_id)
         
-        if image_objects:
-            root.after(50, remove_images)
-        else:
-            root.after(1000, root.destroy)
+        remaining = len(self.image_objects)
+        if remaining > 0:
+            print(f"Removed image ({remaining} remaining)")
+            self.root.after(50, self.remove_next_image)
     
-    # Start
-    root.after(1000, create_image)
-    root.bind('<Escape>', lambda e: root.destroy())
+    def cleanup_and_exit(self, event=None) -> None:
+        """Clean up resources and exit application"""
+        print("Cleaning up and exiting...")
+        if self.root:
+            self.root.destroy()
     
-    root.mainloop()
+    def run(self) -> None:
+        """Main execution method"""
+        print("=" * 60)
+        print("IMAGE GRID DISPLAY")
+        print("=" * 60)
+        
+        # Check and install dependencies
+        if not self.check_dependencies():
+            print("Dependencies not met. Exiting.")
+            return
+        
+        try:
+            # Setup and run application
+            self.setup_window()
+            self.setup_canvas()
+            self.prepare_image()
+            
+            # Start image display sequence
+            print("\nStarting display in 2 seconds...")
+            print("Images will appear from top-right to bottom-left")
+            print("Only 10 images visible at a time")
+            print("Press ESC to exit at any time")
+            print("-" * 60)
+            
+            self.root.after(2000, lambda: self.create_next_image(0))
+            
+            # Start main loop
+            self.root.mainloop()
+            
+        except Exception as e:
+            print(f"Fatal error: {e}")
+            if self.root:
+                self.root.destroy()
+            raise
 
-# SIMPLE WORKING VERSION
-def simple_real_images():
-    """Simple version that actually displays the image"""
-    
-    root = tk.Tk()
-    root.title("")
-    root.overrideredirect(True)
-    
-    # Fullscreen
-    w = root.winfo_screenwidth()
-    h = root.winfo_screenheight()
-    root.geometry(f"{w}x{h}+0+0")
-    
-    # Try to make transparent
+
+def main():
+    """Main entry point"""
     try:
-        root.wm_attributes('-transparentcolor', 'black')
-    except:
-        pass
-    
-    root.configure(bg='black')
-    root.attributes('-topmost', True)
-    
-    print("Loading image...")
-    
-    # Load the actual image
-    try:
-        url = "https://images.unsplash.com/photo-1562860149-691401a306f8?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-        response = requests.get(url, timeout=10)
-        
-        # Open with PIL
-        img = Image.open(BytesIO(response.content))
-        
-        # Resize for grid
-        cell_w = w // 10
-        cell_h = h // 5
-        img = img.resize((cell_w - 10, cell_h - 10), Image.Resampling.LANCZOS)
-        
-        # Convert to PhotoImage
-        photo = ImageTk.PhotoImage(img)
-        root.photo = photo
-        
-        print(f"Image loaded: {img.width}x{img.height}")
-        
+        app = ImageGridDisplay()
+        app.run()
+    except KeyboardInterrupt:
+        print("\nProgram interrupted by user")
     except Exception as e:
-        print(f"Failed to load image: {e}")
-        # Create a simple image as fallback
-        img = Image.new('RGB', (100, 100), color=(255, 0, 0))
-        photo = ImageTk.PhotoImage(img)
-        root.photo = photo
-    
-    # Create positions
-    positions = []
-    for i in range(50):
-        row = i // 10
-        col = 9 - (i % 10)
-        x = col * (w // 10) + 5
-        y = row * (h // 5) + 5
-        positions.append((x, y))
-    
-    # Store labels
-    labels = []
-    count = 0
-    
-    def show_image():
-        nonlocal count
-        
-        if count >= 50:
-            # Destroy all
-            destroy_all()
-            return
-        
-        # Create and show image
-        lbl = tk.Label(root, image=photo, bg='black')
-        x, y = positions[count]
-        lbl.place(x=x, y=y)
-        
-        labels.append(lbl)
-        count += 1
-        
-        # Remove oldest if more than 10
-        if len(labels) > 10:
-            old = labels.pop(0)
-            old.destroy()
-        
-        # Next image
-        if count < 50:
-            root.after(50, show_image)
-        else:
-            root.after(500, destroy_all)
-    
-    def destroy_all():
-        while labels:
-            lbl = labels.pop(0)
-            lbl.destroy()
-            root.update()
-            time.sleep(0.05)
-        
-        root.after(1000, root.destroy)
-    
-    # Start
-    root.after(1000, show_image)
-    root.bind('<Escape>', lambda e: root.destroy())
-    
-    root.mainloop()
+        print(f"Unexpected error: {e}")
+        messagebox.showerror("Error", f"An error occurred: {e}")
 
-# Run the program
+
 if __name__ == "__main__":
-    # Install required packages
-    try:
-        import requests
-        from PIL import Image, ImageTk
-    except ImportError:
-        import subprocess
-        import sys
-        print("Installing required packages...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "pillow"])
-        import requests
-        from PIL import Image, ImageTk
-    
-    # Run the simple version
-    simple_real_images()
+    main()
